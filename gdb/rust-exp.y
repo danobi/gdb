@@ -1402,6 +1402,8 @@ rust_parser::lex_identifier (YYSTYPE *lvalp)
   while ((pstate->lexptr[0] >= 'a' && pstate->lexptr[0] <= 'z')
 	 || (pstate->lexptr[0] >= 'A' && pstate->lexptr[0] <= 'Z')
 	 || pstate->lexptr[0] == '_'
+	 || (pstate->lexptr[0] == '#' && pstate->lexptr - start == 1
+             && *start == 'r')
 	 || (is_gdb_var && pstate->lexptr[0] == '$')
 	 || (pstate->lexptr[0] >= '0' && pstate->lexptr[0] <= '9'))
     ++pstate->lexptr;
@@ -1438,9 +1440,17 @@ rust_parser::lex_identifier (YYSTYPE *lvalp)
       pstate->lexptr = start;
       return 0;
     }
+  else if (token == NULL && length == 2 && strncmp (start, "r#", length) == 0)
+    error (_("Invalid raw identifier"));
 
   if (token == NULL || (pstate->parse_completion && pstate->lexptr[0] == '\0'))
-    lvalp->sval = make_stoken (copy_name (start, length));
+    {
+      /* Handle raw identifiers */
+      if (length > 1 && start[0] == 'r' && start[1] == '#')
+        start += 2;
+
+      lvalp->sval = make_stoken (copy_name (start, length));
+    }
 
   if (pstate->parse_completion && pstate->lexptr[0] == '\0')
     {
@@ -2773,6 +2783,8 @@ rust_lex_tests (void)
   rust_lex_exception_test (&parser, "'\\u{}", "Not enough hex digits seen");
   rust_lex_exception_test (&parser, "'\\Q'", "Invalid escape \\Q in literal");
   rust_lex_exception_test (&parser, "b'\\Q'", "Invalid escape \\Q in literal");
+  rust_lex_exception_test (&parser, "r##if", "Invalid raw identifier");
+  rust_lex_exception_test (&parser, "r#", "Invalid raw identifier");
 
   rust_lex_int_test (&parser, "23", 23, DECIMAL_INTEGER);
   rust_lex_int_test (&parser, "2_344__29", 234429, INTEGER);
@@ -2797,6 +2809,7 @@ rust_lex_tests (void)
   rust_lex_stringish_test (&parser, "hibob", "hibob", IDENT);
   rust_lex_stringish_test (&parser, "hibob__93", "hibob__93", IDENT);
   rust_lex_stringish_test (&parser, "thread", "thread", IDENT);
+  rust_lex_stringish_test (&parser, "r#if", "if", IDENT);
 
   rust_lex_stringish_test (&parser, "\"string\"", "string", STRING);
   rust_lex_stringish_test (&parser, "\"str\\ting\"", "str\ting", STRING);
